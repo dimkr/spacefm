@@ -50,18 +50,6 @@ typedef enum{
 
 typedef struct _VFSFileMonitor VFSFileMonitor;
 
-struct _VFSFileMonitor{
-  gchar* path;
-  /*<private>*/
-  int n_ref;
-#ifdef USE_INOTIFY
-  int wd;
-#else
-  FAMRequest request;
-#endif
-  GArray* callbacks;
-};
-
 /* Callback function which will be called when monitored events happen
  *  NOTE: GDK_THREADS_ENTER and GDK_THREADS_LEAVE might be needed
  *  if gtk+ APIs are called in this callback, since the callback is called from
@@ -71,6 +59,19 @@ typedef void (*VFSFileMonitorCallback)( VFSFileMonitor* fm,
                                         VFSFileMonitorEvent event,
                                         const char* file_name,
                                         gpointer user_data );
+
+struct _VFSFileMonitor{
+  gchar* path;
+  /*<private>*/
+  int n_ref;
+#ifdef USE_INOTIFY
+  int wd;
+#else
+  FAMRequest request;
+#endif
+  VFSFileMonitorCallback callback;
+  gpointer user_data;
+};
 
 /*
 * Init monitor:

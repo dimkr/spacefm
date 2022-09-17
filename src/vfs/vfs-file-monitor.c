@@ -31,13 +31,6 @@
 
 #include "glib-mem.h"
 
-typedef struct
-{
-    VFSFileMonitorCallback callback;
-    gpointer user_data;
-}
-VFSFileMonitorCallbackEntry;
-
 static GHashTable* monitor_hash = NULL;
 static GIOChannel* fam_io_channel = NULL;
 static guint fam_io_watch = 0;
@@ -147,7 +140,6 @@ VFSFileMonitor* vfs_file_monitor_add( char* path,
                                       gpointer user_data )
 {
     VFSFileMonitor * monitor;
-    VFSFileMonitorCallbackEntry cb_ent;
     struct stat file_stat;   // skip stat64
     char resolved_path[PATH_MAX];
     char* real_path;
@@ -177,7 +169,6 @@ VFSFileMonitor* vfs_file_monitor_add( char* path,
         monitor = g_slice_new0( VFSFileMonitor );
         monitor->path = g_strdup( real_path );
 
-        monitor->callbacks = g_array_new ( FALSE, FALSE, sizeof( VFSFileMonitorCallbackEntry ) );
         g_hash_table_insert ( monitor_hash,
                               monitor->path,
                               monitor );
@@ -276,9 +267,8 @@ VFSFileMonitor* vfs_file_monitor_add( char* path,
         /* g_debug( "monitor installed: %s, %p", path, monitor ); */
         if ( cb )
         { /* Install a callback */
-            cb_ent.callback = cb;
-            cb_ent.user_data = user_data;
-            monitor->callbacks = g_array_append_val( monitor->callbacks, cb_ent );
+            monitor->callback = cb;
+            monitor->user_data = user_data;
         }
         g_atomic_int_inc( &monitor->n_ref );
     }
@@ -289,21 +279,9 @@ void vfs_file_monitor_remove( VFSFileMonitor * fm,
                               VFSFileMonitorCallback cb,
                               gpointer user_data )
 {
-    int i;
-    VFSFileMonitorCallbackEntry* callbacks;
-
-//printf( "vfs_file_monitor_remove\n" );
-    if ( cb && fm && fm->callbacks )
+    if ( cb && fm->callback == cb )
     {
-        callbacks = ( VFSFileMonitorCallbackEntry* ) fm->callbacks->data;
-        for ( i = 0; i < fm->callbacks->len; ++i )
-        {
-            if ( callbacks[ i ].callback == cb && callbacks[ i ].user_data == user_data )
-            {
-                fm->callbacks = g_array_remove_index_fast ( fm->callbacks, i );
-                break;
-            }
-        }
+        fm->callback = NULL;
     }
 
     if ( fm && g_atomic_int_dec_and_test( &fm->n_ref ) )  //MOD added "fm &&"
@@ -320,7 +298,6 @@ void vfs_file_monitor_remove( VFSFileMonitor * fm,
 
         g_hash_table_remove( monitor_hash, fm->path );
         g_free( fm->path );
-        g_array_free( fm->callbacks, TRUE );
         g_slice_free( VFSFileMonitor, fm );
     }
 //printf( "vfs_file_monitor_remove   DONE\n" );
@@ -402,18 +379,10 @@ static void dispatch_event( VFSFileMonitor * monitor,
                             VFSFileMonitorEvent evt,
                             const char * file_name )
 {
-    VFSFileMonitorCallbackEntry * cb;
-    VFSFileMonitorCallback func;
-    int i;
-    /* Call the callback functions */
-    if ( monitor->callbacks && monitor->callbacks->len )
+    /* Call the callback function */
+    if ( monitor->callback )
     {
-        cb = ( VFSFileMonitorCallbackEntry* ) monitor->callbacks->data;
-        for ( i = 0; i < monitor->callbacks->len; ++i )
-        {
-            func = cb[ i ].callback;
-            func( monitor, evt, file_name, cb[ i ].user_data );
-        }
+        monitor->callback( monitor, evt, file_name, monitor->user_data );
     }
 }
 
